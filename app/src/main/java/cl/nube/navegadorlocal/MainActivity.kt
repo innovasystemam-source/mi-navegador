@@ -225,13 +225,19 @@ class MainActivity : Activity() {
 
         web.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                applyDesktopViewport(view)
                 if (isCurrent(view)) {
                     progress.visibility = View.VISIBLE
                     showUrl(url)
                 }
             }
 
+            override fun onPageCommitVisible(view: WebView, url: String?) {
+                applyDesktopViewport(view)
+            }
+
             override fun onPageFinished(view: WebView, url: String?) {
+                applyDesktopViewport(view)
                 if (isCurrent(view)) {
                     progress.visibility = View.INVISIBLE
                     showUrl(url)
@@ -364,6 +370,16 @@ class MainActivity : Activity() {
         menu.show()
     }
 
+    /**
+     * En modo escritorio, Chrome ignora el ancho de pantalla real y le dice a la página
+     * que mide más de 1000 px. Aquí hacemos lo mismo cambiando la etiqueta "viewport".
+     */
+    private fun applyDesktopViewport(view: WebView) {
+        val tab = tabs.firstOrNull { it.web === view } ?: return
+        if (!tab.desktop) return
+        view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
+    }
+
     private fun toggleDesktop() {
         val tab = tabs.getOrNull(current) ?: return
         tab.desktop = !tab.desktop
@@ -465,5 +481,34 @@ class MainActivity : Activity() {
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/130.0.0.0 Safari/537.36"
         val BAR: Int = Color.parseColor("#26262C")
+
+        // Ancho (en píxeles) con el que se muestran las páginas en modo escritorio.
+        // Más alto = se parece más a un computador, pero el texto se ve más pequeño.
+        const val DESKTOP_WIDTH = 1280
+
+        val DESKTOP_VIEWPORT_JS: String = """
+            (function () {
+              try {
+                function fix() {
+                  var m = document.querySelector('meta[name=viewport]');
+                  if (!m) {
+                    m = document.createElement('meta');
+                    m.name = 'viewport';
+                    (document.head || document.documentElement).appendChild(m);
+                  }
+                  if (m.getAttribute('content') !== 'width=$DESKTOP_WIDTH') {
+                    m.setAttribute('content', 'width=$DESKTOP_WIDTH');
+                  }
+                }
+                fix();
+                if (window.__nubeObs) return;
+                window.__nubeObs = new MutationObserver(fix);
+                window.__nubeObs.observe(document.documentElement, { childList: true, subtree: true });
+                setTimeout(function () {
+                  if (window.__nubeObs) { window.__nubeObs.disconnect(); window.__nubeObs = null; }
+                }, 10000);
+              } catch (e) {}
+            })();
+        """.trimIndent()
     }
 }
